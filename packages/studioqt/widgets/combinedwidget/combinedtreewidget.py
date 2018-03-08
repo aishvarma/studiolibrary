@@ -38,6 +38,7 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
 
         self._groupItems = []
         self._groupColumn = None
+        self._sortOrder = QtCore.Qt.AscendingOrder
         self._groupOrder = QtCore.Qt.AscendingOrder
 
         self._headerLabels = []
@@ -46,7 +47,7 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
 
         self.setAutoScroll(False)
         self.setMouseTracking(True)
-        self.setSortingEnabled(True)
+        self.setSortingEnabled(False)
         self.setSelectionMode(QtWidgets.QListWidget.ExtendedSelection)
         self.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
 
@@ -61,6 +62,30 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         item = self.itemFromIndex(index)
         item.paintRow(painter, options, index)
 
+    def sortBySettings(self):
+        """
+        Return the current "sortBy" settings as a dictionary. 
+        
+        :rtype: dict 
+        """
+        settings = {
+            "sortOrder": self.sortOrderToInt(self._sortOrder),
+            "sortColumn": self.labelFromColumn(self._sortColumn),
+            "groupOrder": self.sortOrderToInt(self._groupOrder),
+            "groupColumn": self.labelFromColumn(self._groupColumn)
+        }
+
+        return settings
+
+    def setSortBySettings(self, settings):
+        """
+        Set the "sortBy" by settings using the given dictionary. 
+
+        :type settings: dict
+        :rtype: None 
+        """
+        self.sortByColumn(**settings)
+
     def settings(self):
         """
         Return the current state of the widget.
@@ -69,10 +94,9 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         """
         settings = {}
 
-        settings["sortOrder"] = self.sortOrder()
-        settings["sortColumn"] = self.sortColumnLabel()
-        settings["groupOrder"] = self.groupOrder()
-        settings["groupColumn"] = self.groupColumnLabel()
+        sortSettings = self.sortBySettings()
+        settings.update(sortSettings)
+
         # settings["headerState"] = self.header().saveState()
 
         settings["columnSettings"] = self.columnSettings()
@@ -97,8 +121,14 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         groupOrder = settings.get("groupOrder", 0)
         groupColumn = settings.get("groupColumn")
 
+        sortColumn = self.columnFromLabel(sortColumn)
+        groupColumn = self.columnFromLabel(groupColumn)
+
         self.addHeaderLabel(sortColumn)
         self.addHeaderLabel(groupColumn)
+
+        sortOrder = self.intToSortOrder(sortOrder)
+        groupOrder = self.intToSortOrder(groupOrder)
 
         self.sortByColumn(sortColumn, sortOrder, groupColumn, groupOrder)
 
@@ -147,7 +177,7 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
             self.setItemSelected(item, value)
 
         if scrollTo:
-            self.combinedWidget().scrollToItem(items[-1])
+            self.combinedWidget().scrollToSelectedItem()
 
     def selectedItem(self):
         """
@@ -459,10 +489,8 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
 
         :rtype: None
         """
-        column = self.columnFromLabel("Custom Order")
-
         for item in items:
-            item.setText(column, str(row).zfill(padding))
+            item.setText("Custom Order", str(row).zfill(padding))
             row += 1
 
     def updateCustomOrder(self):
@@ -475,12 +503,13 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         padding = 5
 
         items = self.items()
-        column = self.columnFromLabel("Custom Order")
+        columnLabel = "Custom Order"
 
         for item in items:
-            customOrder = item.text(column)
+            customOrder = item.text(columnLabel)
+
             if not customOrder:
-                item.setText(column, str(row).zfill(padding))
+                item.setText(columnLabel, str(row).zfill(padding))
             row += 1
 
     def itemsCustomOrder(self):
@@ -490,8 +519,7 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         :rtype: list[studioqt.CombinedWidgetItem]
         """
         items = self.items()
-        column = self.columnFromLabel("Custom Order")
-        customOrder = sorted(items, key=lambda item: item.text(column))
+        customOrder = sorted(items, key=lambda item: item.text("Custom Order"))
 
         return customOrder
 
@@ -519,10 +547,12 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
             orderedItems.insert(row, item)
 
         self.setItemsCustomOrder(orderedItems)
-        self.sortByColumn(column, QtCore.Qt.AscendingOrder)
+        self.sortByColumn(column, QtCore.Qt.AscendingOrder, self._groupColumn, self._groupOrder)
 
         for item in items:
             self.setItemSelected(item, True)
+
+        self.combinedWidget().scrollToSelectedItem()
 
     # ----------------------------------------------------------------------
     # Support for menus
@@ -563,11 +593,11 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         menu.addSeparator()
 
         action = menu.addAction('Sort Ascending')
-        callback = partial(self.sortByColumn, column, QtCore.Qt.AscendingOrder)
+        callback = partial(self.sortByColumn, column, QtCore.Qt.AscendingOrder, self._groupColumn, self._groupOrder)
         action.triggered.connect(callback)
 
         action = menu.addAction('Sort Descending')
-        callback = partial(self.sortByColumn, column, QtCore.Qt.DescendingOrder)
+        callback = partial(self.sortByColumn, column, QtCore.Qt.DescendingOrder, self._groupColumn, self._groupOrder)
         action.triggered.connect(callback)
 
         menu.addSeparator()
@@ -691,38 +721,13 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
     # Support for sorting items.
     # ----------------------------------------------------------------------
 
-    def sortBySettings(self):
-        """
-        Return the current "sortBy" settings as a dictionary. 
-        
-        
-        :rtype: dict 
-        """
-        settings = {
-            "sortOrder": self.sortOrder(),
-            "sortColumn": self.labelFromColumn(self.sortColumn()),
-            "groupOrder": self.groupOrder(),
-            "groupColumn": self.labelFromColumn(self.groupColumn()),
-        }
-
-        return settings
-
-    def setSortBySettings(self, settings):
-        """
-        Set the "sortBy" by settings using the given dictionary. 
-
-        :type settings: dict
-        :rtype: None 
-        """
-        self.sortByColumn(**settings)
-
     def sortColumnLabel(self):
         """
         Return the current sort column label.
 
         :rtype: str
         """
-        column = self.sortColumn()
+        column = self._sortColumn
         return self.labelFromColumn(column)
 
     def refreshSortBy(self):
@@ -732,7 +737,7 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         :rtype: None
         """
         settings = self.sortBySettings()
-        self.sortByColumn(**settings)
+        return self.sortByColumn(**settings)
 
     def sortOrderToInt(self, sortOrder):
         """
@@ -767,7 +772,42 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         sortOrder = self.header().sortIndicatorOrder()
         return self.sortOrderToInt(sortOrder)
 
-    def sortByColumn(self, sortColumn, sortOrder, groupColumn=False, groupOrder=False):
+    def setSortColumn(self, sortColumn, sortOrder=None):
+        """
+        Sort by the given column and order.
+
+        :type sortColumn: int
+        :type sortOrder: int
+        """
+        if sortOrder is None:
+            sortOrder = self._sortOrder
+
+        self.sortByColumn(
+            sortColumn,
+            sortOrder=sortOrder,
+            groupColumn=self._groupColumn,
+            groupOrder=self._groupOrder
+        )
+
+    def setGroupColumn(self, groupColumn, groupOrder=None):
+        """
+        Group by the given column and order.
+
+        :type groupColumn: bool
+        :type groupOrder: bool
+        """
+        if groupOrder is None:
+            groupOrder = self._groupOrder
+
+        self.sortByColumn(
+            sortColumn=self._sortColumn,
+            sortOrder=self._sortOrder,
+            groupColumn=groupColumn,
+            groupOrder=groupOrder
+        )
+
+    @studioqt.showWaitCursor
+    def sortByColumn(self, sortColumn, sortOrder, groupColumn=None, groupOrder=None):
         """
         Sort by the given column.
 
@@ -781,31 +821,77 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         if isinstance(sortColumn, basestring):
             sortColumn = self.columnFromLabel(sortColumn)
 
-        if isinstance(groupColumn, basestring):
-            groupColumn = self.columnFromLabel(groupColumn)
-
-        self._sortColumn = sortColumn
-        self.setSortingEnabled(True)
+        if not sortColumn:
+            sortColumn = 0
 
         sortColumnLabel = self.labelFromColumn(sortColumn)
-        if sortColumnLabel == "Custom Order":
+
+        isCustomOrder = sortColumnLabel == "Custom Order"
+        if isCustomOrder and sortOrder != QtCore.Qt.AscendingOrder:
             sortOrder = QtCore.Qt.AscendingOrder
 
-        sortOrder = self.intToSortOrder(sortOrder)
-        QtWidgets.QTreeWidget.sortByColumn(self, sortColumn, sortOrder)
+        self._sortOrder = sortOrder
+        self._sortColumn = sortColumn
 
-        if groupOrder is False:
-            groupOrder = self.groupOrder()
+        sortReverse = sortOrder == QtCore.Qt.DescendingOrder
 
-        groupOrder = self.intToSortOrder(groupOrder)
+        def _sortKey(item):
+            return item.text(sortColumnLabel).lower()
 
-        if groupColumn is False:
-            groupColumn = self.groupColumn()
+        items = self.items()
+        items = sorted(items, key=_sortKey, reverse=sortReverse)
+
+        self.groupByColumn(groupColumn, groupOrder, items)
+
+    def groupByColumn(self, groupColumn, groupOrder, items):
+        """
+        Group by the given column and order.
+
+        :type groupColumn: bool
+        :type groupOrder: bool
+        :type items: list[CombinedWidgetItem]
+        :rtype: None
+        """
+        if groupOrder is None:
+            groupOrder = self._groupOrder
+
+        if isinstance(groupColumn, basestring):
+            groupColumn = self.columnFromLabel(groupColumn)
 
         self._groupOrder = groupOrder
         self._groupColumn = groupColumn
 
-        self._groupByColumn(groupColumn, groupOrder)
+        groupLabel = self.labelFromColumn(groupColumn)
+        groupReverse = groupOrder == QtCore.Qt.DescendingOrder
+
+        def _sortKey(item):
+            return item.text(groupLabel).lower()
+
+        if groupColumn:
+
+            currentGroupText = ""
+
+            new = []
+            items = sorted(items, key=_sortKey, reverse=groupReverse)
+
+            for item in items:
+
+                groupText = item.displayText(groupColumn)
+
+                if groupText != currentGroupText:
+
+                    groupItem = self.createGroupItem(groupText, None)
+                    new.append(groupItem)
+
+                currentGroupText = groupText
+                new.append(item)
+
+            items = new
+
+        selectedItems = self.selectedItems()
+        self.takeTopLevelItems()
+        self.addTopLevelItems(items)
+        self.setItemsSelected(selectedItems, True)
 
     def createSortByMenu(self):
         """
@@ -815,8 +901,8 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         """
         menu = QtWidgets.QMenu("Sort By", self)
 
-        sortOrder = self.sortOrder()
-        sortColumn = self.sortColumn()
+        sortOrder = self._sortOrder
+        sortColumn = self._sortColumn
 
         action = studioqt.SeparatorAction("Sort By", menu)
         menu.addAction(action)
@@ -833,7 +919,7 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
             else:
                 action.setChecked(False)
 
-            callback = partial(self.sortByColumn, column, sortOrder)
+            callback = partial(self.setSortColumn, column, sortOrder)
             action.triggered.connect(callback)
 
         action = studioqt.SeparatorAction("Sort Order", menu)
@@ -843,14 +929,14 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         action.setCheckable(True)
         action.setChecked(sortOrder == QtCore.Qt.AscendingOrder)
 
-        callback = partial(self.sortByColumn, sortColumn, QtCore.Qt.AscendingOrder)
+        callback = partial(self.setSortColumn, sortColumn, QtCore.Qt.AscendingOrder)
         action.triggered.connect(callback)
 
         action = menu.addAction("Descending")
         action.setCheckable(True)
         action.setChecked(sortOrder == QtCore.Qt.DescendingOrder)
 
-        callback = partial(self.sortByColumn, sortColumn, QtCore.Qt.DescendingOrder)
+        callback = partial(self.setSortColumn, sortColumn, QtCore.Qt.DescendingOrder)
         action.triggered.connect(callback)
 
         return menu
@@ -901,131 +987,8 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         groupItem.setChildren(children)
         return groupItem
 
-    def addGroupItem(self, text, children):
-        """
-        Add a new group item for the given text and children.
-
-        :type text: str
-        :type children: list[studioqt.CombinedWidgetItem]
-        :rtype: studioqt.CombinedWidgetItemGroup
-        """
-        groupItem = self.createGroupItem(text, children)
-        self.addTopLevelItem(groupItem)
-        self._groupItems.append(groupItem)
-        return groupItem
-
-    def refreshGroupBy(self):
-        """
-        Refresh the grouping of the current group column.
-
-        :rtype: None
-        """
-        for groupItem in self._groupItems:
-            groupItem.updateChildren()
-
-    def itemsGroupByColumn(self, groupColumn, groupOrder, items=None):
-        """
-        Return a list of items grouped by the given column.
-
-        :type groupColumn: int
-        :type groupOrder int
-        :type items: None or list[studioqt.CombinedWidgetItem]
-        :rtype: dict
-        """
-        items = items or self.items()
-
-        groupItems = {}
-        orderedGroups = OrderedDict()
-
-        if isinstance(groupColumn, basestring):
-            groupColumn = self.columnFromLabel(groupColumn)
-
-        if groupColumn:
-            reverse = groupOrder == QtCore.Qt.DescendingOrder
-            items_ = sorted(items, key=lambda item: item.text(groupColumn).lower(), reverse=reverse)
-
-            for item in items_:
-                text = item.displayText(groupColumn)
-                orderedGroups.setdefault(text, [])
-        else:
-            orderedGroups.setdefault("None", [])
-
-        for item in items:
-            if groupColumn is not None:
-                text = item.displayText(groupColumn)
-            else:
-                text = "None"
-
-            groupItems.setdefault(text, [])
-            groupItems[text].append((item, item.isHidden()))
-
-        for key in orderedGroups:
-            orderedGroups[key] = groupItems.get(key, [])
-
-        return orderedGroups
-
-    @studioqt.showWaitCursor
-    def groupByColumn(self, groupColumn, groupOrder):
-        """
-        Group the items on the data in the given column.
-
-        :type groupColumn: int
-        :type groupOrder: int
-        :rtype: None
-        """
-        sortOrder = self.sortOrder()
-        sortColumn = self.sortColumn()
-
-        self.sortByColumn(sortColumn, sortOrder, groupColumn=groupColumn, groupOrder=groupOrder)
-
-    def _groupByColumn(self, groupColumn, groupOrder):
-        """
-        Group the items on the data in the given column.
-
-        Note: The complexity of this method needs to be simplified!
-
-        :type groupColumn: int
-        :type groupOrder: int
-        :rtype: None
-        """
-        if isinstance(groupColumn, basestring):
-            column = self.columnFromLabel(groupColumn)
-
-        self._groupItems = []
-        self._groupColumn = groupColumn
-
-        groupItems = self.itemsGroupByColumn(groupColumn, groupOrder)
-
-        selectedItems = self.selectedItems()
-        self.setSortingEnabled(False)
-        self.takeTopLevelItems()
-
-        for groupText in groupItems.keys():
-
-            children = [item[0] for item in groupItems[groupText]]
-
-            if groupColumn is not None:
-                groupItem = self.addGroupItem(groupText, children)
-
-            for item, isHidden in groupItems[groupText]:
-                self.addTopLevelItem(item)
-                item.setHidden(isHidden)
-
-            if groupColumn is not None:
-                groupItem.updateChildren()
-
-        if groupColumn is None:
-            for groupItem in self._groupItems:
-                groupItem.setHidden(True)
-
-        if selectedItems:
-            self.setItemsSelected(selectedItems, True)
-
     def setValidGroupByColumns(self, columns):
         self._validGroupByColumns = columns
-
-    def groupByOrder(self):
-        return QtCore.Qt.DescendingOrder
 
     def createGroupByMenu(self):
         """
@@ -1044,7 +1007,7 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         action = menu.addAction("None")
         action.setCheckable(True)
 
-        callback = partial(self.groupByColumn, None, groupOrder)
+        callback = partial(self.setGroupColumn, None)
         action.triggered.connect(callback)
 
         validGroupColumns = self._validGroupByColumns
@@ -1066,7 +1029,7 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
             if currentGroupCollumn == column:
                 action.setChecked(True)
 
-            callback = partial(self.groupByColumn, column, groupOrder)
+            callback = partial(self.setGroupColumn, column, groupOrder)
             action.triggered.connect(callback)
 
         action = studioqt.SeparatorAction("Group Order", menu)
@@ -1076,14 +1039,14 @@ class CombinedTreeWidget(CombinedItemViewMixin, QtWidgets.QTreeWidget):
         action.setCheckable(True)
         action.setChecked(groupOrder == QtCore.Qt.AscendingOrder)
 
-        callback = partial(self.groupByColumn, groupColumn, QtCore.Qt.AscendingOrder)
+        callback = partial(self.setGroupColumn, groupColumn, QtCore.Qt.AscendingOrder)
         action.triggered.connect(callback)
 
         action = menu.addAction("Descending")
         action.setCheckable(True)
         action.setChecked(groupOrder == QtCore.Qt.DescendingOrder)
 
-        callback = partial(self.groupByColumn, groupColumn, QtCore.Qt.DescendingOrder)
+        callback = partial(self.setGroupColumn, groupColumn, QtCore.Qt.DescendingOrder)
         action.triggered.connect(callback)
 
         return menu

@@ -75,7 +75,7 @@ class CombinedWidgetItem(QtWidgets.QTreeWidgetItem):
         self._path = None
         self._size = None
         self._rect = None
-        self.textColumnOrder = []
+        self._textColumnOrder = []
 
         self._text = {}
         self._sortText = {}
@@ -262,7 +262,7 @@ class CombinedWidgetItem(QtWidgets.QTreeWidgetItem):
         :type value: str
         :rtype: None
         """
-        self.textColumnOrder.append(column)
+        self._textColumnOrder.append(column)
 
         if isinstance(column, basestring):
             self._text[column] = value
@@ -304,6 +304,9 @@ class CombinedWidgetItem(QtWidgets.QTreeWidgetItem):
         """
 
         if isinstance(column, int):
+            if not self.treeWidget():
+                return
+
             column = self.treeWidget().labelFromColumn(column)
 
         text = self._sortText.get(column, None)
@@ -465,13 +468,12 @@ class CombinedWidgetItem(QtWidgets.QTreeWidgetItem):
         :rtype: str
         """
         if not self._searchText:
-            searchText = []
-            for column in range(self.columnCount()):
-                text = self.data(column, QtCore.Qt.DisplayRole)
+            searchText = [self.path()]
+            for column in self.toJson():
+                text = self.text(column)
                 if text:
                     searchText.append(unicode(text))
             self._searchText = " ".join(searchText)
-
         return self._searchText
 
     def setStretchToWidget(self, widget):
@@ -1140,7 +1142,7 @@ class CombinedWidgetItem(QtWidgets.QTreeWidgetItem):
             value = math.ceil(value) + self.blendPreviousValue()
             try:
                 self.setBlendValue(value)
-            except Exception, msg:
+            except Exception:
                 self.stopBlending()
 
     def startBlendingEvent(self, event):

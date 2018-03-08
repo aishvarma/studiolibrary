@@ -11,7 +11,6 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this library. If not, see <http://www.gnu.org/licenses/>.
 
-import os
 import logging
 
 from studioqt import QtGui
@@ -203,14 +202,6 @@ class CombinedWidget(QtWidgets.QWidget):
         """
         return self.treeWidget().groupColumn()
 
-    def groupByColumn(self, *args):
-        """
-        Reimplemented for convenience.
-
-        Calls self.treeWidget().groupByColumn(*args)
-        """
-        self.treeWidget().groupByColumn(*args)
-
     def columnFromLabel(self, *args):
         """
         Reimplemented for convenience.
@@ -236,6 +227,46 @@ class CombinedWidget(QtWidgets.QWidget):
         """
         self.listView().setDragEnabled(not value)
         self.listView().setDropEnabled(not value)
+
+    def verticalScrollBar(self):
+        """
+        Return the active vertical scroll bar.
+        
+        :rtype: QtWidget.QScrollBar 
+        """
+        if self.isTableView():
+            return self.treeWidget().verticalScrollBar()
+        else:
+            return self.listView().verticalScrollBar()
+
+    def visualItemRect(self, item):
+        """
+        Return the visual rect for the item.
+
+        :type item: QtWidgets.QTreeWidgetItem
+        :rtype: QtCore.QRect
+        """
+        if self.isTableView():
+            visualRect = self.treeWidget().visualItemRect(item)
+        else:
+            index = self.treeWidget().indexFromItem(item)
+            visualRect = self.listView().visualRect(index)
+
+        return visualRect
+
+    def isItemVisible(self, item):
+        """
+        Return the visual rect for the item.
+
+        :type item: QtWidgets.QTreeWidgetItem
+        :rtype: bool
+        """
+        height = self.height()
+        itemRect = self.visualItemRect(item)
+        scrollBarY = self.verticalScrollBar().value()
+
+        y = (scrollBarY - itemRect.y()) + height
+        return y > scrollBarY and y < scrollBarY + height
 
     def scrollToItem(self, item):
         """
@@ -599,8 +630,8 @@ class CombinedWidget(QtWidgets.QWidget):
         if item:
             try:
                 item.contextMenu(menu)
-            except Exception, msg:
-                logger.exception(msg)
+            except Exception as error:
+                logger.exception(error)
         else:
             action = QtWidgets.QAction(menu)
             action.setText("No Item selected")
@@ -707,7 +738,7 @@ class CombinedWidget(QtWidgets.QWidget):
         """
         s = set()
         sadd = s.add
-        return [x for x in labels if not (x in s or sadd(x))]
+        return [x for x in labels if x.strip() and not (x in s or sadd(x))]
 
     def setColumnLabels(self, labels):
         """
@@ -763,13 +794,40 @@ class CombinedWidget(QtWidgets.QWidget):
 
         :rtype: list[str]
         """
-
         seq = []
         for item in self.items():
-            seq.extend(item.textColumnOrder)
+            seq.extend(item._textColumnOrder)
 
         seen = set()
         return [x for x in seq if x not in seen and not seen.add(x)]
+
+    def takeItems(self):
+        """
+        Take all items from the combined widget.
+        
+        :rtype: list[studioqt.CombinedWidgetItem] 
+        """
+        items = []
+
+        iterator = QtWidgets.QTreeWidgetItemIterator(
+            self.treeWidget(),
+            QtWidgets.QTreeWidgetItemIterator.All
+        )
+
+        i = self.treeWidget().topLevelItemCount()
+
+        while i > -1:
+            items.append(self.treeWidget().takeTopLevelItem(i))
+            i -= 1
+
+        while iterator.value():
+            items.append(iterator.value().takeChildren())
+            iterator += 1
+
+        return items
+
+    def refreshColumns(self):
+        self.setColumnLabels(self.columnLabelsFromItems())
 
     def setItems(self, items, data=None, sortEnabled=True):
         """
@@ -781,20 +839,22 @@ class CombinedWidget(QtWidgets.QWidget):
         
         :rtype: None
         """
+        selectedItems = self.selectedItems()
 
-        if sortEnabled:
-            settings = self.treeWidget().sortBySettings()
+        self.takeItems()
 
-        self.treeWidget().clear()
         self.treeWidget().addTopLevelItems(items)
-
-        self.setColumnLabels(self.columnLabelsFromItems())
 
         if data:
             self.setItemData(data)
 
         if sortEnabled:
-            self.treeWidget().setSortBySettings(settings)
+            self.refreshSortBy()
+
+        if selectedItems:
+            self.clearSelection()
+            self.selectItems(selectedItems)
+            self.scrollToSelectedItem()
 
     def padding(self):
         """
@@ -959,6 +1019,16 @@ class CombinedWidget(QtWidgets.QWidget):
             path = item.url().toLocalFile()
             if path in paths:
                 item.setSelected(True)
+
+    def selectItems(self, items):
+        """
+        Select the given items.
+
+        :type items: list[studiolibrary.LibraryItem]
+        :rtype: None
+        """
+        paths = [item.path() for item in items]
+        self.selectPaths(paths)
 
     def isIconView(self):
         """

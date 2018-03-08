@@ -231,8 +231,12 @@ class CombinedListView(CombinedItemViewMixin, QtWidgets.QListView):
         :type itemAt: studioqt.CombinedWidgetItem
         :rtype: None
         """
+        scrollValue = self.verticalScrollBar().value()
+
         self.treeWidget().moveItems(items, itemAt)
         self.itemMoved.emit(items[-1])
+
+        self.verticalScrollBar().setValue(scrollValue)
 
     # ---------------------------------------------------------------------
     # Support for a custom colored rubber band.

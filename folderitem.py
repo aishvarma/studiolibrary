@@ -80,7 +80,6 @@ class FolderItem(studiolibrary.LibraryItem):
         super(FolderItem, self).save(*args, **kwargs)
 
         if self.libraryWidget():
-            self.libraryWidget().refresh()
             self.libraryWidget().selectFolderPath(self.path())
 
 

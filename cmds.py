@@ -25,6 +25,13 @@ import collections
 
 from datetime import datetime
 
+# Use the built-in version of scandir/walk if possible,
+# otherwise use the scandir module version
+try:
+    from scandir import walk
+except ImportError:
+    from os import walk
+
 
 __all__ = [
     "user",
@@ -237,7 +244,7 @@ def findItems(path, depth=3, **kwargs):
     maxDepth = depth
     startDepth = path.count(os.path.sep)
 
-    for root, dirs, files in os.walk(path):
+    for root, dirs, files in walk(path):
 
         files.extend(dirs)
 
